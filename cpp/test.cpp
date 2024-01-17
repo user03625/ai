@@ -22,7 +22,7 @@ int main(){
 
 	Tensor<double> t2(3,2)={7,8,9,10,11,12};
 	Tensor<double>::printMat(t2);
-
+	
 	//Tensor<double> t3=Tensor::mul(t1,t2);
 	
 
