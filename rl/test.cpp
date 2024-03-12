@@ -12,23 +12,42 @@ using namespace std;
 struct Actions{
 	float actions[4];
 	list<int> legalActions;
+	int nrVisits=0;
 };
 
-struct Coord{
+struct Point{
 	int i;
 	int j;
 };
 
+struct Agent{
+	Point location;
+	int nrRewards=0;
+};
+
+struct Visit{
+	Point location;
+	Point oldLocation;
+	float nrVisits;
+	float oldQ;
+	float r;
+	float rFuture;
+	float alpha;
+};
+
+struct Memory{
+	list<Visit> visits;
+	float totalRewward=0;
+}
 
 const int LEFT=0;
 const int UP=1;
 const int RIGHT=2;
 const int DOWN=3;
 
-const int EPOCHS = 10000;
-const float EPSILON = 0.2;
-const float ALPHA = 0.4;
-const float DECAY = 1;
+const int EPOCHS = 100000;
+const float ALPHA = 1;
+const float DECAY = 0.99;
 const int NR_ACTIONS = 4;
 
 template<typename T>
@@ -46,31 +65,190 @@ void deleteMatrix(T** matrix,int n){
 	delete[] matrix;
 }
 
-void runEpisode(Coord lizard,Actions** qTable,float** table,int n,int m,list<pair<int,int>>& finalStates);
-int takeAction(Coord lizard,Actions& cell,int n,int m);
+void runEpisode(Agent& agent,Actions** qTable,float** table,int n,int m,list<Point>& finalStates,int i,float totalReward,list<Point>& rewardsLocations,Point goalState);
+int takeAction(Actions& cell,int n,int m,int i,int oldAction);
 float maximum(Actions& cell);
-bool gameOver(Coord lizard,list<pair<int,int>>& finalStates);
+bool gameOver(Agent& agent,list<Point>& finalStates);
 void printQTable(Actions** qTable,int n,int m);
 const char* toString(int direction);
 void printPolicy(Actions** table,int n,int m);
-int argMax(Actions& cell);
+int argMax(Actions& cell,int oldAction);
 void printLegalActions(Actions** table,int n,int m);
 void printRewards(float** table,int n,int m);
+void qLearning(char* file);
+int opposite(int action);
+void getQTable(Actions** qTable,int n,int m);
+void getFinalStates(list<Point>& finalStates,ifstream& reader);
+void getRewards(float** rewardsTable,int n,int m,float& totalReward,list<Point>& rewardsLocations,Point goalState,ifstream& reader);
+float getReward(float** rewardsTable,Agent& agent,list<Point>& finalStates,list<Point>& rewardsLocations,Point goalState);
 
 int main(int argc,char* argv[]){
 	assert(argc==2);
-	ifstream reader(argv[1]);
+	//qLearning(argv[1]);
+	ppo(argv[1]);
+	return 0;
+
+}
+
+void ppo(char* file){
+	ifstream reader(file);
+
 	int n;
 	int m;
+	Agent agent;
+	Point goalState;
 	reader>>n>>m;
-	Actions** qTable=allocMatrix<Actions>(n,m);
-	Coord lizard;
-	reader>>lizard.i>>lizard.j;
+	reader>>agent.location.i>>agent.location.j;
+	reader>>goalState.i>>goalState.j;
 
+	Actions** qTable=allocMatrix<Actions>(n,m);
+	float** rewardsTable=allocMatrix<float>(n,m);
+	float totalReward=0;
+	list<Point> finalStates;
+	list<Point> rewardsLocations;
+
+
+	getQTable(qTable,n,m);
+	getRewards(rewardsTable,n,m,totalReward,rewardsLocations,goalState,reader);
+	getFinalStates(finalStates,reader);
+
+
+	Memory paths[NR_PATHS];
+	for(int i=0;i<EPOCHS;i++){
+		if(i%NR_PATHS==0){
+			learn();
+		}
+		runEpisodePPO(agent,qTable,rewardsTable,n,m,finalStates,i,totalReward,rewardsLocations,goalState,paths[i%NR_PATHS]);
+
+	}
+
+	printRewards(rewardsTable,n,m);
+	printLegalActions(qTable,n,m);
+	printQTable(qTable,n,m);
+	printPolicy(qTable,n,m);
+	deleteMatrix(qTable,n);
+	deleteMatrix(rewardsTable,n);
+}
+
+void runEpisodePPO(Agent& agent,Actions** qTable,float** table,int n,int m,list<Point>& finalStates,int i,float totalReward,list<Point>& rewardsLocations,Point goalState,Memory paths[]){
+	Point old;
+	int action=-1;
+	int step=0;
+	int limit=2*n*m;
+	list<Memory> path;
+	float runReward=0;
+	while(!gameOver(agent,finalStates) && step<limit){
+		action = takeAction(qTable[agent.location.i][agent.location.j],n,m,i,action);
+		old=agent.location;
+		switch(action){
+			case LEFT:
+				agent.location.j--;
+				break;
+			case UP:
+				agent.location.i--;
+				break;
+			case RIGHT:
+				agent.location.j++;
+				break;
+			case DOWN:
+				agent.location.i++;
+				break;
+		}
+		path.push_front(agent.location)
+		//qTable[agent.location.i][agent.location.j].nrVisits++;
+		//float nrVisits = qTable[agent.location.i][agent.location.j].nrVisits;
+		//float oldQ=qTable[old.i][old.j].actions[action];
+		//float r=getReward(table,agent,finalStates,rewardsLocations,goalState)/totalReward;
+		//float rFuture = maximum(qTable[agent.location.i][agent.location.j]);
+		//float alpha = ALPHA/nrVisits;
+		//qTable[old.i][old.j].actions[action] = (1.0-alpha)*oldQ + alpha*(r+DECAY*rFuture); 
+		float r=getReward(table,agent,finalStates,rewardsLocations,goalState);
+		runReward+=r;
+		step++;
+	}			
+
+	float advantage;
+	for(Point cell:path){
+		advantage=qTable[cell.i][cell.j].
+
+}
+
+void qLearning(char* file){
+	ifstream reader(file);
+
+	int n;
+	int m;
+	Agent agent;
+	Point goalState;
+	reader>>n>>m;
+	reader>>agent.location.i>>agent.location.j;
+	reader>>goalState.i>>goalState.j;
+
+	Actions** qTable=allocMatrix<Actions>(n,m);
+	float** rewardsTable=allocMatrix<float>(n,m);
+	float totalReward=0;
+	list<Point> finalStates;
+	list<Point> rewardsLocations;
+
+
+	getQTable(qTable,n,m);
+	getRewards(rewardsTable,n,m,totalReward,rewardsLocations,goalState,reader);
+	getFinalStates(finalStates,reader);
+
+
+	Point start=agent.location;
+	for(int i=0;i<EPOCHS;i++){
+		agent.location=start;
+		runEpisode(agent,qTable,rewardsTable,n,m,finalStates,i,totalReward,rewardsLocations,goalState);
+	}
+
+	printRewards(rewardsTable,n,m);
+	printLegalActions(qTable,n,m);
+	printQTable(qTable,n,m);
+	printPolicy(qTable,n,m);
+	deleteMatrix(qTable,n);
+	deleteMatrix(rewardsTable,n);
+}
+
+void runEpisode(Agent& agent,Actions** qTable,float** table,int n,int m,list<Point>& finalStates,int i,float totalReward,list<Point>& rewardsLocations,Point goalState){
+	Point old;
+	int action=-1;
+	int step=0;
+	int limit=2*n*m;
+	while(!gameOver(agent,finalStates) && step<limit){
+		action = takeAction(qTable[agent.location.i][agent.location.j],n,m,i,action);
+		old=agent.location;
+		switch(action){
+			case LEFT:
+				agent.location.j--;
+				break;
+			case UP:
+				agent.location.i--;
+				break;
+			case RIGHT:
+				agent.location.j++;
+				break;
+			case DOWN:
+				agent.location.i++;
+				break;
+		}
+		qTable[agent.location.i][agent.location.j].nrVisits++;
+		float nrVisits = qTable[agent.location.i][agent.location.j].nrVisits;
+		float oldQ=qTable[old.i][old.j].actions[action];
+		float r=getReward(table,agent,finalStates,rewardsLocations,goalState)/totalReward;
+		float rFuture = maximum(qTable[agent.location.i][agent.location.j]);
+		float alpha = ALPHA/nrVisits;
+		qTable[old.i][old.j].actions[action] = (1.0-alpha)*oldQ + alpha*(r+DECAY*rFuture); 
+		step++;
+	}			
+}
+
+void getQTable(Actions** qTable,int n,int m){
 	for(int i=0;i<n;i++){
 		for(int j=0;j<m;j++){
 			for(int k=0;k<NR_ACTIONS;k++){
 				qTable[i][j].actions[k]=0;
+				
 				switch(k){
 					case LEFT:
 						if(j-1>=0) qTable[i][j].legalActions.push_back(LEFT);
@@ -88,31 +266,29 @@ int main(int argc,char* argv[]){
 			}
 		}
 	}
+}
 
-	float** table=allocMatrix<float>(n,m);
-	for(int i=0;i<n;i++)
-		for(int j=0;j<m;j++)
-			reader>>table[i][j];
-	list<pair<int,int>> finalStates;
+void getFinalStates(list<Point>& finalStates,ifstream& reader){
 	int a;
 	int b;
 	while(reader>>a>>b){
-		finalStates.push_back(make_pair(a,b));
+		finalStates.push_back({a,b});
 	}
-
-
-	for(int i=0;i<EPOCHS;i++){
-		runEpisode(lizard,qTable,table,n,m,finalStates);
-	}
-	printRewards(table,n,m);
-	printLegalActions(qTable,n,m);
-	printQTable(qTable,n,m);
-	printPolicy(qTable,n,m);
-	deleteMatrix(qTable,n);
-	deleteMatrix(table,n);
-	return 0;
 }
 
+void getRewards(float** rewardsTable,int n,int m,float& totalReward,list<Point>& rewardsLocations,Point goalState,ifstream& reader){
+	for(int i=0;i<n;i++)
+		for(int j=0;j<m;j++)
+			reader>>rewardsTable[i][j];
+	for(int i=0;i<n;i++)
+		for(int j=0;j<m;j++)
+			if(rewardsTable[i][j]>0){
+				totalReward+=rewardsTable[i][j];
+				if(i!=goalState.i || j!=goalState.j)
+					rewardsLocations.push_back({i,j});
+			}
+
+}
 
 const char* toString(int direction){
 	switch(direction){
@@ -127,6 +303,7 @@ const char* toString(int direction){
 	}
 	return "";
 }
+
 const char* toSign(int direction){
 	switch(direction){
 		case LEFT:
@@ -141,44 +318,46 @@ const char* toSign(int direction){
 	return "";
 }
 
-void runEpisode(Coord lizard,Actions** qTable,float** table,int n,int m,list<pair<int,int>>& finalStates){
-	Coord old;
-	int action;
-	int step=0;
-	int limit=1000;
-	while(!gameOver(lizard,finalStates) && step<limit){
-		action = takeAction(lizard,qTable[lizard.i][lizard.j],n,m);
-		old=lizard;
-		//cout<<lizard.i<<" "<<lizard.j<<" "<<toString(action)<<endl;
-		switch(action){
-			case LEFT:
-				lizard.j--;
-				break;
-			case UP:
-				lizard.i--;
-				break;
-			case RIGHT:
-				lizard.j++;
-				break;
-			case DOWN:
-				lizard.i++;
-				break;
+float getReward(float** rewardsTable,Agent& agent,list<Point>& finalStates,list<Point>& rewardsLocations,Point goalState){
+	if(agent.nrRewards==rewardsLocations.size()){
+		for(Point p:finalStates)
+			if(p.i==agent.location.i && p.j==agent.location.j)
+				return rewardsTable[agent.location.i][agent.location.j];
+		return 0;
+	}
+	else {
+		for(Point p:rewardsLocations){
+			if(p.i==agent.location.i && p.i==agent.location.j)
+				agent.nrRewards++;
 		}
-		qTable[old.i][old.j].actions[action]= (1.0-ALPHA)*qTable[old.i][old.j].actions[action]+ALPHA*(table[lizard.i][lizard.j]+DECAY*maximum(qTable[lizard.i][lizard.j])-qTable[old.i][old.j].actions[action]);
-		//qTable[old.i][old.j].actions[action]= (1.0-ALPHA)*qTable[old.i][old.j].actions[action]+ALPHA*(table[lizard.i][lizard.j]+DECAY*maximum(qTable[lizard.i][lizard.j]));
-		step++;
-	}			
+		if(agent.location.i==goalState.i && agent.location.j==goalState.j)
+			return 0;
+		return rewardsTable[agent.location.i][agent.location.j];
+	}
 }
 
-int takeAction(Coord lizard,Actions& cell,int n,int m){
+int opposite(int action){
+	if(action == UP)
+		return DOWN;
+	if(action == DOWN)
+		return UP;
+	if(action == LEFT)
+		return RIGHT;
+	if(action == RIGHT)
+		return LEFT;
+	return -1;
+}
+
+int takeAction(Actions& cell,int n,int m,int i,int oldAction){
+	float epsilon = (1.0-((float)i)/EPOCHS);
 	double r = ((double) rand() / RAND_MAX);
-	if(r<EPSILON){
+	if(r<epsilon){
 		vector<int> out;
 		sample(cell.legalActions.begin(),cell.legalActions.end(),back_inserter(out),1,mt19937{random_device{}()});
 		return out[0];	
 	}
 	else{
-		return argMax(cell);
+		return argMax(cell,oldAction);
 	}
 }
 
@@ -189,9 +368,18 @@ float maximum(Actions& cell){
 			maxim=cell.actions[action];
 	return maxim;
 }
-bool gameOver(Coord lizard,list<pair<int,int>>& finalStates){
+
+int argMax(Actions& cell,int oldAction){
+	int maxim=cell.legalActions.front();
+	for(int action:cell.legalActions)
+		if(cell.actions[action]>cell.actions[maxim])
+			maxim=action;
+	return maxim;
+}
+
+bool gameOver(Agent& agent,list<Point>& finalStates){
 	for(auto pair:finalStates)
-		if(pair.first==lizard.i && pair.second==lizard.j)
+		if(pair.i==agent.location.i && pair.j==agent.location.j)
 			return true;
 	return false;
 }
@@ -316,19 +504,11 @@ void printPolicy(Actions** table,int n,int m){
 	for(int i=0;i<n;i++){
 		for(int j=0;j<m;j++){
 			cout.width(3);
-			cout<<toSign(argMax(table[i][j]))<<" ";
+			cout<<toSign(argMax(table[i][j],-1))<<" ";
 		}
 		cout<<endl;
 	}
 	cout<<endl;
-}
-
-int argMax(Actions& cell){
-	int maxim=cell.legalActions.front();
-	for(int action:cell.legalActions)
-		if(cell.actions[action]>cell.actions[maxim])
-			maxim=action;
-	return maxim;
 }
 
 void printRewards(float** table,int n, int m){
