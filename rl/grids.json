@@ -23,18 +23,16 @@
         "dimension":[3,4],
         "start":[2,0],
         "goalStates":[[2,3]],
-        "grid":[0,0,0,0,
-                0,0,-1,0,
-                0,0,-1,1],
-        "finalStates":[[1,1],[2,2]],
-        "rewardStates":[[0,0],[2,2]]
+        "grid":[0,0,0,0,0,0,-1,0,0,0,-1,1],
+        "finalStates":[[1,2],[2,2],[2,3]],
+        "rewardStates":[[2,3]]
     },
     "grid3":
     {
         "dimension":[3,3],
         "start":[2,0],
         "goalStates":[[2,2]],
-        "grid":[10,0,0,0,-10,0,0,0,5],
+        "grid":[5,0,0,0,-10,0,0,0,10],
         "finalStates":[[1,1],[2,2]],
         "rewardStates":[[0,0],[2,2]]
     },
@@ -64,5 +62,15 @@
         "grid":[0,0,0,0,-10,0,0,0,10],
         "finalStates":[[1,1],[2,2]],
         "rewardStates":[[2,2]]
+    },
+    "grid7":
+    {
+        "dimension":[3,3],
+        "start":[2,0],
+        "goalStates":[[2,2]],
+        "grid":[1,-1,-1,-1,-10,-1,-1,-1,1],
+        "finalStates":[[1,1],[2,2]],
+        "rewardStates":[[2,2]]
     }
+    
 }

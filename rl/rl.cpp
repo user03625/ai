@@ -1,6 +1,4 @@
 ///TODO: clean the code, make it run and work, optimize
-///      implement json
-///      implement ppo
 
 #include<map>
 #include<iostream>
@@ -12,6 +10,7 @@
 #include<iomanip>
 #include<algorithm>
 #include<json.hpp>
+#include<cmath>
 
 class Util;
 class Memory;
@@ -46,6 +45,13 @@ class Util{
 			for(auto i=0;i<n;i++)
 				delete[] matrix[i];
 			delete[] matrix;
+		}
+		static float clip(float value,float low,float high){
+			if(value<low)
+				return low;
+			if(value>high)
+				return high;
+			return value;
 		}
 };
 
@@ -91,6 +97,8 @@ class Frame{
 		float alpha;
 		float oldStateValue;
 		float newStateValue;
+		float policyProbability; //<==============================================================
+		float maxStateValue;
 		State* oldState;
 		State* newState;
 		bool done;
@@ -100,13 +108,13 @@ class Frame{
 		}
 		void print(){
 			std::cout<<"nrVisits = "<<nrVisits<<std::endl;
-			std::cout<<"oldQvalue = "<<nrVisits<<std::endl;
-			std::cout<<"reward = "<<nrVisits<<std::endl;
-			std::cout<<"maxQValue = "<<nrVisits<<std::endl;
-			std::cout<<"alpha = "<<nrVisits<<std::endl;
-			std::cout<<"oldStateValue = "<<nrVisits<<std::endl;
-			std::cout<<"newStateValue = "<<nrVisits<<std::endl;
-			std::cout<<"done = "<<nrVisits<<std::endl;
+			std::cout<<"oldQvalue = "<<oldQValue<<std::endl;
+			std::cout<<"reward = "<<reward<<std::endl;
+			std::cout<<"maxQValue = "<<maxQValue<<std::endl;
+			std::cout<<"alpha = "<<alpha<<std::endl;
+			std::cout<<"oldStateValue = "<<oldStateValue<<std::endl;
+			std::cout<<"newStateValue = "<<newStateValue<<std::endl;
+			std::cout<<"done = "<<done<<std::endl;
 
 			std::cout<<"oldPoint = "<<((Point*)oldState)->i<<" "<<((Point*)oldState)->j<<std::endl;
 			std::cout<<"newPoint = "<<((Point*)newState)->i<<" "<<((Point*)newState)->j<<std::endl;
@@ -156,7 +164,7 @@ class Direction:public Action{
 		Point vector;
 		Direction::Code code;
 		float qValue;
-
+		float probability;
 		Direction(){
 			this->code=UP;
 			this->vector=vectorMap[code];
@@ -197,6 +205,10 @@ class Cell{
 			if(location.j<m-1){
 				Direction right(Direction::RIGHT);
 				directions[Direction::RIGHT]=right;
+			}
+			float probability=1.0/directions.size();
+			for(auto it=directions.begin();it!=directions.end();it++){
+				it->second.probability=probability;
 			}
 		}
 		void copyLegalActionsToScreen(char** screen,int ii,int jj,int cellSize){
@@ -266,6 +278,8 @@ class Q{
 		virtual float getQValue(State* state,Action* action)=0;
 		virtual float getMaxQValue(State* state)=0;
 		virtual Action* getAction(State* state)=0;
+		virtual float getPolicyProbability(State* state,Action* action)=0;
+		virtual float getMaxStateValue(State* state)=0;
 
 		virtual void setQValue(State* state,Action* action, float value)=0;
 		virtual void setStateValue(State* state,float value)=0;
@@ -279,14 +293,17 @@ class Agent{
 		State* currentState;
 		State* startState;
 		int nrRewards;
+		float rewards;
 		Agent(Q* q,State* startState){
 			this->q=q;	
 			nrRewards=0;
+			rewards=0;
 			currentState=startState;
 			this->startState=startState->copy();
 		}
 		void reset(){
 			nrRewards=0;
+			rewards=0;
 			currentState=startState->copy();
 		}
 		Action* getAction(State* state){
@@ -316,14 +333,16 @@ class Agent{
 			frame->newState=environment->getState(currentState,frame->action);
 			//std::cout<<frame->oldState->toString()<<" "<<frame->action->toChar()<<" "<<frame->newState->toString()<<std::endl;
 			frame->newState->nrVisits++;
-			frame->reward=environment->getReward(this);
 			frame->maxQValue=getMaxQValue(frame->newState);
 			frame->newStateValue=getStateValue(frame->newState);
 			frame->nrVisits=frame->newState->nrVisits;
-			frame->alpha=ALPHA/frame->nrVisits;
+			frame->alpha=ALPHA;
 			frame->done=environment->gameOver(frame->newState);
+			frame->policyProbability=q->getPolicyProbability(frame->oldState,frame->action);
+			frame->maxStateValue=q->getMaxStateValue(frame->oldState);
 
 			currentState=frame->newState;
+			frame->reward=environment->getReward(this);
 			return frame;		
 		}
 	
@@ -356,7 +375,7 @@ class TableEnvironment:public Environment{
 			}
 			int i=0;
 			for(float reward:currentGrid["grid"]){
-				rewardsTable[i/n][i%m]=reward;
+				rewardsTable[i/m][i%m]=reward;
 				i++;
 			}
 			
@@ -375,7 +394,13 @@ class TableEnvironment:public Environment{
 					if(p->i==current->i && p->j==current->j)
 						return rewardsTable[current->i][current->j];
 				}
-				return 0;
+				for(State* q:rewardStates){
+					Point* p=(Point*)q;
+					if(p->i==current->i && p->j==current->j){
+						return 0;
+					}
+				}
+				return rewardsTable[current->i][current->j];
 			}
 			else {
 				for(State* q:rewardStates){
@@ -456,6 +481,23 @@ class QTable:public Q{
 				}
 			}
 		}
+		float getMaxStateValue(State* state){
+			Point* current=(Point*)state;
+			Point* p=&(table[current->i][current->j].directions.begin()->second.vector);
+			float maximum = table[current->i+p->i][current->j+p->j].stateValue;
+			for(auto it=table[current->i][current->j].directions.begin();it!=table[current->i][current->j].directions.end();it++){
+				p=&(it->second.vector);
+				if(table[current->i+p->i][current->j+p->j].stateValue>maximum){
+					maximum=table[current->i+p->i][current->j+p->j].stateValue;
+				}
+			}
+			return maximum;
+		}
+		float getPolicyProbability(State* state, Action* action){
+			Point* p=(Point*)state;
+			Direction* direction=(Direction*)action;
+			return table[p->i][p->j].directions[direction->code].probability;	
+		}
 
 		float getStateValue(State* state){
 			Point* location=(Point*)state;
@@ -491,11 +533,20 @@ class QTable:public Q{
 			Point* location=(Point*)state;
 			Direction* direction=(Direction*)action;
 			table[location->i][location->j].directions[direction->code].qValue=value;
+			//================= set probabilities ===============================================
+			float sum=0;
+			for(auto it=table[location->i][location->j].directions.begin();it!=table[location->i][location->j].directions.end();it++){
+				sum+=exp(it->second.qValue);
+			}
+			for(auto it=table[location->i][location->j].directions.begin();it!=table[location->i][location->j].directions.end();it++){
+				it->second.probability=exp(it->second.qValue)/sum;
+			}
 		}
 		void setStateValue(State* state,float value){
 			Point* location=(Point*)state;
 			table[location->i][location->j].stateValue=value;
 		}
+		
 		void print(){
 			int cellSize=3;
 			int height = n*(cellSize+1)+1;
@@ -538,7 +589,7 @@ class QTable:public Q{
 		}
 		void printPolicy(){
 			for(int i=0;i<n;i++){
-				for(int j=0;j<n;j++){
+				for(int j=0;j<m;j++){
 					std::cout<<max(table[i][j]).second->toChar()<<" ";
 				}
 				std::cout<<std::endl;
@@ -586,18 +637,43 @@ class Optimizer{
 class QLearning:public Optimizer{
 	public:
 		static const float DECAY;
+		static const float ALPHA;
 
 		void learn(Agent* agent,Memory* memory){
 			for(Frame* frame: memory->getData()){
-				float value=(1.0-frame->alpha)*frame->oldQValue+frame->alpha*(frame->reward+QLearning::DECAY*frame->maxQValue);
+				float value=(1.0-QLearning::ALPHA)*frame->oldQValue+QLearning::ALPHA*(frame->reward+agent->rewards+QLearning::DECAY*frame->maxQValue);
 				agent->setQValue(frame->oldState,frame->action,value);
 			}
 			memory->clear();
 		}
 };
-
 const float QLearning::DECAY=0.99;
+const float QLearning::ALPHA=0.005;
 
+class PPO:public Optimizer{
+	public:
+		QTable* qTable;
+		static const float EPSILON;
+		static const float DISCOUNT;
+		PPO(QTable* qTable){
+			this->qTable=qTable;
+		}
+		void learn(Agent* agent,Memory* memory){
+			for(Frame* frame: memory->getData()){
+				float stateValue = frame->reward+DISCOUNT*frame->maxStateValue; 				
+				qTable->setStateValue(frame->oldState,stateValue);
+				float advantage=frame->oldStateValue-frame->oldQValue;
+				float newPolicyProbability=qTable->getPolicyProbability(frame->oldState,frame->action);
+				float ratio=newPolicyProbability/frame->policyProbability;
+				float value=std::min(ratio*advantage,Util::clip(ratio*advantage,1-EPSILON,1+EPSILON));
+
+				agent->setQValue(frame->oldState,frame->action,value);
+			}
+			memory->clear();
+		}
+};
+const float PPO::EPSILON=0.2;
+const float PPO::DISCOUNT=0.99;
 
 class RL{
 	private:
@@ -609,12 +685,13 @@ class RL{
 		static const int N;
 	public:
 		RL(const char* file){
-			char grid[256]="grid0";
+			char grid[256]="grid4";
 			environment=new TableEnvironment(file,grid);
 			((TableEnvironment*)environment)->printRewards();
-			optimizer = new QLearning();
 			memory = new Memory();
 			table = new QTable(((TableEnvironment*)environment)->n,((TableEnvironment*)environment)->m);
+			optimizer = new QLearning();
+			//optimizer = new PPO((QTable*)table);
 			((QTable*)table)->printLegalActions();
 			agent = new Agent(table,&((TableEnvironment*)environment)->start);
 		
@@ -638,14 +715,18 @@ const int RL::N=10;
 
 void RL::run(int epochs){
 	Frame* frame;
+	int steps;
+	int maxSteps=20;
 	for(int i=1;i<=epochs;i++){
 		agent->reset();
 		environment->reset();
+		steps=0;
 		do{
 			frame=agent->step(environment);
 			//frame->print();
 			memory->save(frame);
-		}while(!frame->done);
+			steps++;
+		}while(!frame->done && steps<maxSteps);
 		if(i%N==0){
 			//std::cout<<"epoch: "<<i<<std::endl;
 			optimizer->learn(agent,memory);
@@ -658,7 +739,7 @@ int main(int argc,char** argv){
 	//assert(argc==2);
 	RL rl("grids.json");
 	std::cout<<"Training started"<<std::endl;
-	rl.run(1000);
+	rl.run(100000);
 	std::cout<<"Training finished"<<std::endl;
 	rl.print();
 

@@ -15,7 +15,7 @@ class Tensor{
 		Tensor(int n){
 			shape.push_back(n);
 		}
-		template <typename... Args>
+		template<typename... Args>
 		Tensor(int first,Args... args):Tensor(args...){
 			shape.push_back(first);
 			Tensor(args...);
@@ -27,6 +27,26 @@ class Tensor{
 			this->data=new T[this->size];	
 
 		}
+		template<typename... Args>
+		T operator()
+		T operator[](int i){
+			return data[i];
+		}
+		void operator+=(Tensor<T> t){
+			for(int i=0;i<size;i++){
+				data[i]+=t[i];
+			}
+		}
+		void operator+=(T scalar){
+			for(int i=0;i<size;i++){
+				data[i]+=scalar;
+			}
+		}
+		void operator-=(Tensor<T> t);
+		void operator-=(T scalar);
+		void operator*(Tensor<T> t);
+		void operator*(T scalar);
+		/*
 		auto add(auto tensor);
 		auto dot(auto tensor);
 		auto mul(auto tensor);
@@ -36,16 +56,12 @@ class Tensor{
 		static auto dot(auto t1,auto t2);
 		static auto mul(auto t1,auto t2);
 		static auto printMat(auto t1);
+		static void mul(Tensor<T>* t1, Tensor<T>* t2, Tensor<T>* t3);
 		auto random();
 		auto zeros();
 		auto ones();
 		auto getSize();
 		auto operator[](auto i){
-			/*
-			if(shape.size()==1)
-				return data[i];
-			else
-			*/
 			return &data[i];
 		}
 		auto print();
@@ -55,8 +71,9 @@ class Tensor{
 		auto getShape(){
 			return shape;
 		}
+		*/
 };
-
+/*
 template<typename T>
 auto Tensor<T>::printMat(auto t1){
 	assert(t1.getDim()==2);
@@ -92,6 +109,20 @@ auto Tensor<T>::mul(auto t1, auto t2){
 				t3[i][j]+=t1[i][k]*t2[k][j];
 		}
 	return t3;
+}
+
+template<typename T>
+void Tensor<T>::mul(Tensor<T>* t1, Tensor<T>* t2, Tensor<T>* t3){
+	assert(t1->getDim()==2 && t2->getDim()==2);
+	int n=t1->getShape()[0];
+	int m=t2->getShape()[1];
+	int columns = t1->getShape()[1];
+	for(int i=0;i<n;i++)
+		for(int j=0;j<m;j++){
+			(*t3)[i][j]=0;
+			for(int k=0;k<columns;k++)
+				(*t3)[i][j]+=(*t1)[i][k]*(*t2)[k][j];
+		}
 }
 
 template<typename T>
@@ -170,4 +201,4 @@ template<typename T>
 auto Tensor<T>::dot(auto tensor){
 	return Tensor::dot(tensor,*this);
 }
-
+*/
